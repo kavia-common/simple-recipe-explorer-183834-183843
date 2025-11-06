@@ -1,128 +1,171 @@
 import Blits from '@lightningjs/blits'
+import SearchBar from '../components/SearchBar.js'
+import RecipeCard from '../components/RecipeCard.js'
+import { getRecipes } from '../data/recipes.js'
 
-import Loader from '../components/Loader.js'
-import Button from '../components/Button.js'
-
-const colors = ['#f5f3ff', '#ede9fe', '#ddd6fe', '#c4b5fd', '#a78bfa']
-
+/**
+ * PUBLIC_INTERFACE
+ * Home page: Contains search and a grid of recipe cards.
+ */
 export default Blits.Component('Home', {
-  components: {
-    Loader,
-    Button,
-  },
-  template: `
-    <Element w="1920" h="1080" color="#1e293b">
-      <Element :y.transition="$y">
-        <Element
-          src="assets/logo.png"
-          w="200"
-          h="200"
-          :scale.transition="{value: $scale, duration: 500}"
-          :rotation.transition="{value: $rotation, duration: 800}"
-          :x.transition="{value: $x, delay: 200, duration: 1200, easing: 'cubic-bezier(1,-0.64,.39,1.44)'}"
-          mount="{x: 0.5}"
-          y="320"
-          :effects="[$shader('radius', {radius: 8})]"
-        />
-        <Loader :x="1920 / 2" mount="{x: 0.5}" y="600" w="160" :alpha.transition="$loaderAlpha" :loaderColor="$color" />
-        <Element y="600" :alpha.transition="$textAlpha">
-          <Text size="80" align="center" maxwidth="1920">Hello!</Text>
-          <Text
-            size="50"
-            align="center"
-            y="120"
-            :x="1920/2"
-            maxwidth="500"
-            lineheight="64"
-            mount="{x: 0.5}"
-            color="#ffffffaa"
-            content="Let's get started with Lightning 3 & Blits"
-          />
-        </Element>
-      </Element>
-        <Element w="13.5%" h="40" x="43%" y="10%" color="{top: '#763efb', bottom: '#433484'}">
-          <Button ref="btn" />
-        </Element>
-    </Element>
-  `,
+  components: { SearchBar, RecipeCard },
+
   state() {
+    const items = getRecipes()
     return {
-      /**
-       * Y-position of the entire page contents
-       * @type {number}
-       */
-      y: 0,
-      /**
-       * X-position of the logo, used to create slide in transition
-       * @type {number}
-       */
-      x: -1000,
-      /**
-       * Rotation of the logo, used to create a spinning transition
-       * @type {number}
-       */
-      rotation: 0,
-      /**
-       * Scale of the logo, used to create a zoom-in / zoom-out transition
-       * @type {number}
-       */
-      scale: 1,
-      /**
-       * Alpha of the loader component, used to create a fade-in / fade-out transition
-       * @type {number}
-       */
-      loaderAlpha: 0,
-      /**
-       * Alpha of the text, used to create a fade-in transition
-       * @type {number}
-       */
-      textAlpha: 0,
-      /**
-       * Color passed into the loader component
-       * @type {string}
-       */
-      color: '',
+      query: '',
+      recipes: items,
+      columns: 4,
+      cardW: 400,
+      cardH: 360,
+      gapX: 40,
+      gapY: 40,
+      scrollY: 0,
+      focusIndex: 0
     }
   },
-  hooks: {
-    ready() {
-      this.rotateColors(200)
 
-      this.loaderAlpha = 1
-      this.x = 1920 / 2
+  template: `
+    <Element w="1760" h="840">
+      <!-- Subtitle -->
+      <Text x="0" y="0" :content="$subtitle" :textColor="$appTheme.text" fontSize="28" />
 
-      this.$setTimeout(() => {
-        this.rotation = 720
-        this.scale = 1.5
-      }, 3000)
+      <!-- Search -->
+      <Element x="0" y="50" w="1760" h="90">
+        <SearchBar :query="$query" @onChange="$onQueryChanged" />
+      </Element>
 
-      this.$setTimeout(() => {
-        this.scale = 1
-      }, 3000 + 300)
+      <!-- Empty/Results State -->
+      <Text x="0" y="154" :content="$resultsLabel" :textColor="$mutedText" fontSize="22" />
 
-      this.$setTimeout(() => {
-        this.y = -60
-        this.loaderAlpha = 0
-        this.scale = 1
-        this.textAlpha = 1
-      }, 6000)
+      <!-- Grid area -->
+      <Element x="0" y="190" w="1760" h="650" clip="true">
+        <!-- Cards (positioned manually) -->
+        <Element :for="(item, i) in $recipes" :key="$item.id">
+          <RecipeCard
+            :recipe="$item"
+            :x="$cardX($i)"
+            :y="$cardY($i) - $scrollY"
+          />
+        </Element>
+        <!-- Empty state message -->
+        <Text x="20" y="20" :content="$emptyMessage" :textColor="$mutedText" fontSize="26" :alpha="$isEmpty ? 1 : 0" />
+      </Element>
+    </Element>
+  `,
+
+  computed: {
+    appTheme() {
+      return this.$app.theme
     },
-    focus() {
-      this.$select('btn').$focus() // Select the button with the ref 'btn'
+    subtitle() {
+      return 'Discover delicious recipes'
     },
+    resultsLabel() {
+      const c = (this.recipes || []).length
+      return c > 0 ? `${c} recipe${c === 1 ? '' : 's'} found` : ''
+    },
+    isEmpty() {
+      return (this.recipes || []).length === 0
+    },
+    emptyMessage() {
+      return this.isEmpty ? 'No recipes match your search.' : ''
+    },
+    mutedText() {
+      const t = this.$app.theme.text
+      return (t & 0xffffff) | 0x77000000
+    }
   },
+
   methods: {
-    /**
-     * Method to rotate the colors of the loader
-     * @param {number} interval - interval in ms
-     */
-    rotateColors(interval) {
-      let i = 0
-      this.$setInterval(() => {
-        i++
-        if (i >= colors.length) i = 0
-        this.color = colors[i]
-      }, interval)
+    // PUBLIC_INTERFACE
+    /** Recompute filtered items when the query changes. */
+    onQueryChanged(text) {
+      this.query = text || ''
+      this.recipes = getRecipes(this.query)
+      // reset focus/scroll when search changes
+      this.focusIndex = 0
+      this.scrollY = 0
     },
+
+    cardX(i) {
+      const c = this.columns
+      const col = i % c
+      return col * (this.cardW + this.gapX)
+    },
+
+    cardY(i) {
+      const c = this.columns
+      const row = Math.floor(i / c)
+      return row * (this.cardH + this.gapY)
+    },
+
+    // maintain in-bounds focus index
+    clampFocus(idx) {
+      const max = Math.max(0, (this.recipes?.length || 1) - 1)
+      return Math.max(0, Math.min(idx, max))
+    },
+
+    ensureVisible(idx) {
+      const y = this.cardY(idx)
+      const viewH = 650
+      const top = this.scrollY
+      const bottom = this.scrollY + viewH
+      const cardBottom = y + this.cardH
+      if (y < top) this.scrollY = y
+      else if (cardBottom > bottom) this.scrollY = cardBottom - viewH
+    }
   },
+
+  input: {
+    left() {
+      const c = this.columns
+      const next = this.clampFocus(this.focusIndex - 1)
+      if (Math.floor(this.focusIndex / c) === Math.floor(next / c)) {
+        this.focusIndex = next
+        this.ensureVisible(this.focusIndex)
+        return true
+      }
+      return false
+    },
+    right() {
+      const next = this.clampFocus(this.focusIndex + 1)
+      this.focusIndex = next
+      this.ensureVisible(this.focusIndex)
+      return true
+    },
+    up() {
+      const c = this.columns
+      const next = this.clampFocus(this.focusIndex - c)
+      if (next !== this.focusIndex) {
+        this.focusIndex = next
+        this.ensureVisible(this.focusIndex)
+        return true
+      }
+      return false
+    },
+    down() {
+      const c = this.columns
+      const next = this.clampFocus(this.focusIndex + c)
+      if (next !== this.focusIndex) {
+        this.focusIndex = next
+        this.ensureVisible(this.focusIndex)
+        return true
+      }
+      return false
+    },
+    enter() {
+      // Delegate enter to the selected card by navigating directly
+      const item = (this.recipes || [])[this.focusIndex]
+      if (item) {
+        this.$router.to(`/recipe/${item.id}`)
+        return true
+      }
+      return false
+    },
+    back() {
+      // Bubble up to App if necessary
+      return false
+    }
+  }
 })
